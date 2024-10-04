@@ -12,6 +12,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+
 async def get_sheet_data(spreadsheet_id, range_name):
     """Получает данные из Google Sheets и возвращает их в виде pandas DataFrame"""
     creds = await get_credentials()
