@@ -52,16 +52,30 @@ async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, old_price_col
                 "Content-Type": "application/json"
             }
 
-            if debug:
+            if debug == True:
                 logging.info("Отладочный режим для Ozon включен. Запрос не будет отправлен.")
                 logging.info("Отправляемые данные:")
                 logging.info(payload)
             else:
                 async with session.post("https://api-seller.ozon.ru/v1/product/import/prices", json=payload, headers=headers) as response:
                     if response.status == 200:
-                        logging.info(f"Цена товара с артикулом {offer_id} успешно обновлена.")
+                        try:
+                            response_data = await response.json()
+                            if response_data.get("success", 0) == 1:
+                                logging.info(f"Цена товара с артикулом {offer_id} успешно обновлена.")
+                            else:
+                                error_message = response_data.get("error", {}).get("message", "Неизвестная ошибка")
+                                logging.error(f"Ошибка при обновлении цены товара с артикулом {offer_id}: {error_message}")
+                        except aiohttp.client_exceptions.ContentTypeError:
+                            response_text = await response.text()
+                            logging.error(f"Ошибка при обновлении цены товара с артикулом {offer_id}: {response_text}")
+                            logging.info(f"Статус ответа: {response.status}")
+                            logging.info(f"Заголовки ответа: {response.headers}")
                     else:
-                        logging.error(f"Ошибка при обновлении цены товара с артикулом {offer_id}: {await response.text()}")
+                        response_text = await response.text()
+                        logging.error(f"Ошибка при отправке в OZON цены товара с артикулом {offer_id}: {response_text}")
+                        logging.info(f"Статус ответа: {response.status}")
+                        logging.info(f"Заголовки ответа: {response.headers}")
 
 # Пример использования
 df = pd.DataFrame({
@@ -74,4 +88,4 @@ df = pd.DataFrame({
 client_id = "your_client_id"
 api_key = "your_api_key"
 
-asyncio.run(update_prices_ozon(df, "new_price", "old_price", "offer_id", "min_price", client_id, api_key, debug=True))
+asyncio.run(update_prices_ozon(df, "new_price", "old_price", "offer_id", "min_price", client_id, api_key, debug=False))

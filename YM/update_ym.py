@@ -52,10 +52,23 @@ async def update_price_ym(df, access_token, campaign_id, offer_id_col, new_price
         if not debug:
             responses = await asyncio.gather(*tasks)
             for response in responses:
+                response_text = await response.text()  # Fetch response text for all cases early
                 if response.status == 200:
-                    logging.info("Цена успешно обновлена!")
+                    try:
+                        response_data = await response.json()
+                        if response_data.get('success') == 0:
+                            error_message = response_data.get('error', {}).get('message', 'Unknown error')
+                            logging.error(f"Ошибка при обновлении цены для товара с ID {offer_id}: {error_message}")
+                        else:
+                            logging.info(f"Цена для товара с ID {offer_id} успешно обновлена!")
+                            logging.info(f"Ответ сервера: {response_data}")
+                    except aiohttp.client_exceptions.ContentTypeError as e:
+                        logging.error(f"Ошибка при обновлении цены для товара с ID {offer_id}: {str(e)}")
+                        logging.error(f"Ответ сервера: {response_text}")
                 else:
-                    logging.error(f"Ошибка при обновлении цены: {response.status} - {await response.text()}")
+                    logging.error(f"Ошибка при отправке в ЯндексМаркет цены для товара с ID {offer_id}: {response_text}")
+                    logging.info(f"Статус ответа: {response.status}")
+                    logging.info(f"Заголовки ответа: {response.headers}")
 
 async def main():
     access_token = "{access_token}"
@@ -66,7 +79,7 @@ async def main():
         "discount_base": [2499.99, 3499.99, 2299.99]
     })
 
-    await update_price_ym(df, access_token, campaign_id, "offer_id", "new_price", "discount_base", debug=True)
+    await update_price_ym(df, access_token, campaign_id, "offer_id", "new_price", "discount_base", debug=False)
 
 if __name__ == "__main__":
     asyncio.run(main())

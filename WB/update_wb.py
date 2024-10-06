@@ -18,9 +18,9 @@ async def update_prices_wb(df, nmID_col, price_col, discount_col, api_key: str, 
     }
     goods = [
         {
-            "nmID": row[nmID_col],
-            "price": row[price_col],
-            "discount": row[discount_col]
+            "nmID": int(row[nmID_col]),
+            "price": int(row[price_col]),
+            "discount": int(row[discount_col])
         }
         for _, row in df.iterrows()
     ]
@@ -28,7 +28,7 @@ async def update_prices_wb(df, nmID_col, price_col, discount_col, api_key: str, 
         "data": goods
     }
 
-    if debug:
+    if debug == True:
         logging.info("Отладочный режим для WB включен. Запрос не будет отправлен.")
         logging.info("Отправляемые данные:")
         logging.info(payload)
@@ -36,13 +36,37 @@ async def update_prices_wb(df, nmID_col, price_col, discount_col, api_key: str, 
     else:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload) as response:
-                response_data = await response.json()
                 if response.status == 200:
-                    logging.info("Цены и скидки успешно обновлены")
-                    return response_data
+                    try:
+                        response_data = await response.json()
+                        if response_data.get("error", False):
+                            error_text = response_data.get("errorText", "Неизвестная ошибка")
+                            for _, row in df.iterrows():
+                                nmID = row[nmID_col]
+                                logging.error(f"Ошибка при обновлении цен и скидок для товара с номером {nmID}: {error_text}")
+                            logging.info(f"Ответ сервера: {response_data}")
+                        else:
+                            for _, row in df.iterrows():
+                                nmID = row[nmID_col]
+                                logging.info(f"Цены и скидки для товара с номером {nmID} успешно обновлены")
+                            logging.info(f"Ответ сервера: {response_data}")
+                        return response_data
+                    except aiohttp.client_exceptions.ContentTypeError:
+                        response_text = await response.text()
+                        for _, row in df.iterrows():
+                            nmID = row[nmID_col]
+                            logging.error(f"Ошибка при обновлении цен и скидок для товара с номером {nmID}: {response_text}")
+                        logging.info(f"Статус ответа: {response.status}")
+                        logging.info(f"Заголовки ответа: {response.headers}")
+                        return {"error": True, "errorText": response_text}
                 else:
-                    logging.error(f"Ошибка при обновлении цен и скидок: {response_data['errorText']}")
-                    return response_data
+                    response_text = await response.text()
+                    for _, row in df.iterrows():
+                        nmID = row[nmID_col]
+                        logging.error(f"Ошибка при отправке в Вайлдбериз цен и скидок для товара с номером {nmID}: {response_text}")
+                    logging.info(f"Статус ответа: {response.status}")
+                    logging.info(f"Заголовки ответа: {response.headers}")
+                    return {"error": True, "errorText": response_text}
 
 if __name__ == "__main__":
     # Пример DataFrame
@@ -53,4 +77,4 @@ if __name__ == "__main__":
     })
 
     api_key = "your_api_key_here"
-    asyncio.run(update_prices_wb(df, "nmID", "price", "discount", api_key, debug=True))
+    asyncio.run(update_prices_wb(df, "nmID", "price", "discount", api_key, debug=False))

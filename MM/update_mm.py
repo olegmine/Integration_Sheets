@@ -17,12 +17,13 @@ async def update_prices_mm(df, token, offer_id_col, price_col, is_deleted_col, d
 
         prices = []
         for _, row in df.iterrows():
+            offer_id = row[offer_id_col]
             if row[is_deleted_col] == '':
                 isDeleted = False
             else:
                 isDeleted = row[is_deleted_col]
             prices.append({
-                "offerId": str(row[offer_id_col]),
+                "offerId": str(offer_id),
                 "price": int(row[price_col]),
                 "isDeleted": bool(isDeleted)
             })
@@ -35,16 +36,27 @@ async def update_prices_mm(df, token, offer_id_col, price_col, is_deleted_col, d
             }
         }
 
-        if debug:
+        if debug == True:
             logging.info("Отладочный режим  для MM включен. Запрос не будет отправлен.")
             logging.info("Отправляемые данные:")
             logging.info(json.dumps(data, indent=2))
         else:
             async with session.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(data)) as response:
                 if response.status == 200:
-                    logging.info("Цены успешно обновлены!")
+                    try:
+                        response_data = await response.json()
+                        logging.info(f"Цены для товара с артикулом {offer_id} успешно обновлены!")
+                        logging.info(f"Ответ сервера: {response_data}")
+                    except aiohttp.client_exceptions.ContentTypeError:
+                        response_text = await response.text()
+                        logging.error(f"Ошибка при обновлении цен для товара с артикулом {offer_id}: {response_text}")
+                        logging.info(f"Статус ответа: {response.status}")
+                        logging.info(f"Заголовки ответа: {response.headers}")
                 else:
-                    logging.error(f"Ошибка при обновлении цен: {response.status} - {await response.text()}")
+                    response_text = await response.text()
+                    logging.error(f"Ошибка при отправке в МегаМаркет цен для товара с артикулом {offer_id}: {response_text}")
+                    logging.info(f"Статус ответа: {response.status}")
+                    logging.info(f"Заголовки ответа: {response.headers}")
 
 # Пример использования
 df = pd.DataFrame({
@@ -54,4 +66,4 @@ df = pd.DataFrame({
 })
 
 token = "********-****-****-****-************"
-asyncio.run(update_prices_mm(df, token, "offer_id", "price", "is_deleted", debug=True))
+asyncio.run(update_prices_mm(df, token, "offer_id", "price", "is_deleted", debug=False))
