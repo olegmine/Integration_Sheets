@@ -11,6 +11,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
+
 async def update_price_ym(df, access_token, campaign_id, offer_id_col, new_price_col, discount_base_col, debug=False):
     async with aiohttp.ClientSession() as session:
         tasks = []
@@ -33,10 +34,10 @@ async def update_price_ym(df, access_token, campaign_id, offer_id_col, new_price
                 ]
             }
 
-            url = f"https://api.partner.market.yandex.ru/v2/campaigns/{campaign_id}/offers/prices/update.json"
+            url = f"https://api.partner.market.yandex.ru/businesses/{campaign_id}/offer-prices/updates"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {access_token}"
+                "Api-Key": access_token
             }
 
             if debug:
@@ -47,36 +48,40 @@ async def update_price_ym(df, access_token, campaign_id, offer_id_col, new_price
                 task = asyncio.create_task(
                     session.post(url, headers=headers, data=json.dumps(data))
                 )
-                tasks.append(task)
+                tasks.append((offer_id, task))
 
         if not debug:
-            responses = await asyncio.gather(*tasks)
-            for response in responses:
-                response_text = await response.text()  # Fetch response text for all cases early
+            for offer_id, task in tasks:
+                response = await task
+                response_text = await response.text()  # Fetch response text for all cases
+
+                logging.info(f"Полный ответ сервера для товара с ID {offer_id}:")
+                logging.info(response_text)
+
                 if response.status == 200:
                     try:
-                        response_data = await response.json()
+                        response_data = json.loads(response_text)
                         if response_data.get('success') == 0:
                             error_message = response_data.get('error', {}).get('message', 'Unknown error')
                             logging.error(f"Ошибка при обновлении цены для товара с ID {offer_id}: {error_message}")
                         else:
                             logging.info(f"Цена для товара с ID {offer_id} успешно обновлена!")
-                            logging.info(f"Ответ сервера: {response_data}")
-                    except aiohttp.client_exceptions.ContentTypeError as e:
-                        logging.error(f"Ошибка при обновлении цены для товара с ID {offer_id}: {str(e)}")
-                        logging.error(f"Ответ сервера: {response_text}")
+                    except json.JSONDecodeError as e:
+                        logging.error(f"Ошибка при разборе JSON для товара с ID {offer_id}: {str(e)}")
                 else:
-                    logging.error(f"Ошибка при отправке в ЯндексМаркет цены для товара с ID {offer_id}: {response_text}")
+                    logging.error(f"Ошибка при отправке в ЯндексМаркет цены для товара с ID {offer_id}")
                     logging.info(f"Статус ответа: {response.status}")
                     logging.info(f"Заголовки ответа: {response.headers}")
 
+
 async def main():
-    access_token = "{access_token}"
-    campaign_id = "{campaign_id}"
+    access_token = "ACMA:D4a5OExH6Hvtcx8BxgTqv2gfIpc2E7KmTPlekqDE:43a81531"
+    campaign_id = "76443469"
+    business_id = '76443469'
     df = pd.DataFrame({
-        "offer_id": ["123456", "789012", "345678"],
-        "new_price": [1999.99, 2499.99, 1799.99],
-        "discount_base": [2499.99, 3499.99, 2299.99]
+        "offer_id": ["Blackshark-ucenka"],
+        "new_price": [3380],
+        "discount_base": [5600]
     })
 
     await update_price_ym(df, access_token, campaign_id, "offer_id", "new_price", "discount_base", debug=False)

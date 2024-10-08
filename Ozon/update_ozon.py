@@ -1,7 +1,9 @@
+
 import asyncio
 import aiohttp
 import pandas as pd
 import logging
+import json
 
 logging.basicConfig(
     filename="update_prices_ozon.log",
@@ -10,38 +12,35 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, old_price_col: str, offer_id_col: str, min_price_col: str, client_id: str, api_key: str, debug: bool = False):
-    """
-    Обновляет цены товаров в системе Ozon.
+def prepare_dataframe_for_json(df):
+    for col in df.select_dtypes(include=['int64', 'float64']).columns:
+        if col != 'product_id':
+            df[col] = df[col].astype(str)
+    return df
 
-    Args:
-        df (pd.DataFrame): DataFrame с информацией о товарах.
-        new_price_col (str): Название столбца с новыми ценами.
-        old_price_col (str): Название столбца со старыми ценами.
-        offer_id_col (str): Название столбца с артикулами товаров.
-        min_price_col (str): Название столбца с минимальными ценами.
-        client_id (str): Идентификатор клиента.
-        api_key (str): API-ключ.
-        debug (bool, optional): Флаг отладочного режима. Defaults to False.
-    """
+async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, old_price_col: str, product_id_col: str,offer_id_col: str,
+                             min_price_col: str, client_id: str, api_key: str, debug: bool = False):
+    df = prepare_dataframe_for_json(df)
+
     async with aiohttp.ClientSession() as session:
         for _, row in df.iterrows():
-            offer_id = row[offer_id_col]
+            product_id = int(row[product_id_col])
+            offer_id = str(row[offer_id_col])
             old_price = row[old_price_col]
             new_price = row[new_price_col]
-            min_price = 0
+            min_price = row.get(min_price_col, '0')
 
             payload = {
                 "prices": [
                     {
                         "auto_action_enabled": "UNKNOWN",
                         "currency_code": "RUB",
-                        "min_price": str(min_price),
+                        "min_price": min_price,
                         "offer_id": offer_id,
-                        "old_price": str(old_price),
-                        "price": str(new_price),
+                        "old_price": old_price,
+                        "price": new_price,
                         "price_strategy_enabled": "UNKNOWN",
-                        "product_id": 0  # Не используется, но обязательно должен быть указан
+                        "product_id": product_id
                     }
                 ]
             }
@@ -52,40 +51,47 @@ async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, old_price_col
                 "Content-Type": "application/json"
             }
 
-            if debug == True:
-                logging.info("Отладочный режим для Ozon включен. Запрос не будет отправлен.")
-                logging.info("Отправляемые данные:")
-                logging.info(payload)
+            logging.info(f"Отправляемые данные: {json.dumps(payload, ensure_ascii=False)}")
+
+            if debug:
+                logging.info(f"DEBUG MODE: Запрос не отправлен. Payload: {json.dumps(payload, ensure_ascii=False)}")
             else:
-                async with session.post("https://api-seller.ozon.ru/v1/product/import/prices", json=payload, headers=headers) as response:
+                async with session.post("https://api-seller.ozon.ru/v1/product/import/prices", json=payload,
+                                        headers=headers) as response:
+                    response_text = await response.text()
+                    logging.info(f"Статус ответа: {response.status}")
+                    logging.info(f"Текст ответа: {response_text}")
+                    logging.info(f"Заголовки ответа: {response.headers}")
+
                     if response.status == 200:
                         try:
-                            response_data = await response.json()
-                            if response_data.get("success", 0) == 1:
-                                logging.info(f"Цена товара с артикулом {offer_id} успешно обновлена.")
+                            response_data = json.loads(response_text)
+                            if response_data.get("result"):
+                                logging.info(f"Цена товара с product_id {product_id} успешно обновлена.")
                             else:
                                 error_message = response_data.get("error", {}).get("message", "Неизвестная ошибка")
-                                logging.error(f"Ошибка при обновлении цены товара с артикулом {offer_id}: {error_message}")
-                        except aiohttp.client_exceptions.ContentTypeError:
-                            response_text = await response.text()
-                            logging.error(f"Ошибка при обновлении цены товара с артикулом {offer_id}: {response_text}")
-                            logging.info(f"Статус ответа: {response.status}")
-                            logging.info(f"Заголовки ответа: {response.headers}")
+                                logging.error(
+                                    f"Ошибка при обновлении цены товара с product_id {product_id}: {error_message}")
+                        except json.JSONDecodeError:
+                            logging.error(f"Ошибка при декодировании JSON ответа для товара с product_id {product_id}")
                     else:
-                        response_text = await response.text()
-                        logging.error(f"Ошибка при отправке в OZON цены товара с артикулом {offer_id}: {response_text}")
-                        logging.info(f"Статус ответа: {response.status}")
-                        logging.info(f"Заголовки ответа: {response.headers}")
+                        logging.error(f"Ошибка при отправке в OZON цены товара с product_id {product_id}: {response_text}")
 
 # Пример использования
 df = pd.DataFrame({
-    "offer_id": ["10002179", "10002180", "10002181"],
-    "old_price": [1000, 1500, 2000],
-    "new_price": [1100, 1600, 2100],
-    "min_price": [900, 1400, 1900]
+    "offer_id": ['Moroccanoil-100ml'],
+    "old_price": [2900],
+    "new_price": [2670],
+    'product_id': [1706152388]
 })
 
-client_id = "your_client_id"
-api_key = "your_api_key"
+client_id = "1336645"
+api_key = "e6640a3f-d177-4b08-9487-59be840f8a8c"
 
-asyncio.run(update_prices_ozon(df, "new_price", "old_price", "offer_id", "min_price", client_id, api_key, debug=False))
+# Для отправки реальных запросов
+# asyncio.run(update_prices_ozon(df, "new_price", "old_price",
+                               # "offer_id", "min_price", client_id, api_key))
+
+# # Для тестового режима (debug mode)
+# asyncio.run(update_prices_ozon(df, "new_price", "old_price",
+#                                "product_id", 'offer_id',"min_price", client_id, api_key, debug=False))

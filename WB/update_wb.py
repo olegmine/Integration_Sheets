@@ -11,9 +11,9 @@ logging.basicConfig(
 )
 
 async def update_prices_wb(df, nmID_col, price_col, discount_col, api_key: str, debug: bool = False):
-    url = f"https://openapi.wildberries.ru/prices/api/ru/api/v2/upload/task"
+    url = f"https://discounts-prices-api.wildberries.ru/api/v2/upload/task"
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": api_key,
         "Content-Type": "application/json"
     }
     goods = [
@@ -71,10 +71,10 @@ async def update_prices_wb(df, nmID_col, price_col, discount_col, api_key: str, 
 if __name__ == "__main__":
     # Пример DataFrame
     df = pd.DataFrame({
-        "nmID": [123, 456, 789],
-        "price": [999, 1499, 799],
-        "discount": [30, 20, 40]
+        "nmID": [234732552, 239118382, 237350405],
+        "price": [6000, 14800, 11490],
+        "discount": [29, 63, 44]
     })
 
-    api_key = "your_api_key_here"
+    api_key = "eyJhbGciOiJFUzI1NiIsImtpZCI6IjIwMjQxMDAxdjEiLCJ0eXAiOiJKV1QifQ.eyJlbnQiOjEsImV4cCI6MTc0NDA2ODI0MSwiaWQiOiIwMTkyNjZiOC1kM2ZjLTcwNDItYjc0ZC03NTgwZGEyZDZiNTgiLCJpaWQiOjMyMTQxMzQ4LCJvaWQiOjIwNTA1NywicyI6MjYsInNpZCI6ImQ4NGEzNmU5LWM5NzUtNDkwMi04NDA3LWU3OTg1OTM5ZTM3MyIsInQiOmZhbHNlLCJ1aWQiOjMyMTQxMzQ4fQ.OWY2mt__EBdKZzQFcn4Gi3oSCcB_qMvw69vCN5KO5MZY-ELC7sZiV8159yTnXA7317kSDx0BUXY8-q3TKCMIlA"
     asyncio.run(update_prices_wb(df, "nmID", "price", "discount", api_key, debug=False))
