@@ -13,6 +13,11 @@ from Ozon.update_ozon import update_prices_ozon
 from WB.update_wb import update_prices_wb
 from YM.update_ym import update_price_ym
 from MM.update_mm import update_prices_mm
+from logger import logger
+from config import (Tech_PC_Components_OZON, Client_Id_Tech_PC_Components_OZON, Smart_Shop_OZON,
+                    Client_Id_Smart_Shop_OZON, ByMarket_OZON, Client_Id_ByMarket_OZON, Tech_PC_Components_YM,
+                    B_id_Tech_PC_Components_YM, SSmart_shop_YM, B_id_SSmart_shop_YM, ByMarket_YM, B_id_ByMarket_YM,
+                    Tech_PC_Components_WB, ByMarket_WB, Smart_shop_WB)
 
 DEBUG = True
 
@@ -20,130 +25,157 @@ DEBUG = True
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 
-# Настройка логирования
-logging.basicConfig(
-    filename='app.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 
 async def delete_table(db_name, table_name):
-    """Удаляет таблицу из базы данных"""
     try:
         conn = sqlite3.connect(db_name)
         c = conn.cursor()
         c.execute(f"DROP TABLE IF EXISTS '{table_name}'")
         conn.commit()
+        logger.info(f"Таблица {table_name} успешно удалена из базы данных {db_name}", db_name=db_name, table_name=table_name)
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при работе с базой данных: {e}")
+        logger.error(f"Ошибка при удалении таблицы {table_name} из базы данных {db_name}", db_name=db_name, table_name=table_name, error=str(e))
     finally:
         conn.close()
 
 async def update_loop():
     while True:
         try:
-            await update_data_ozon()
-            # await update_data_wb()
-            await update_data_ym()
-            # await update_data_mm()
+            logger.info("Начало цикла обновления данных для всех маркетплейсов")
+            await asyncio.gather(
+                update_data_ozon(),
+                update_data_wb(),
+                update_data_ym(),
+                # update_data_mm() # Раскомментируйте для обновления данных Megamarket
+            )
+            logger.info("Цикл обновления данных для всех маркетплейсов успешно завершен")
         except Exception as e:
-            logging.error(f"Ошибка при обновлении данных: {e}")
+            logger.error("Критическая ошибка в цикле обновления данных", error=str(e))
+        logger.info(f"Ожидание {UPDATE_INTERVAL_MINUTES} минут до следующего обновления")
         await asyncio.sleep(UPDATE_INTERVAL_MINUTES * 60)
 
 async def update_data_ozon():
-    df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'Ozon!A1:J')
-    await save_to_database(df, SQLITE_DB_NAME, 'product_data_ozon1', primary_key_cols=['product_id'])
-    updated_df, price_changed_df = await update_price(df, product_id_col='product_id')
-    await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'Ozon!A3:J')
-    # if not price_changed_df.empty:
-    #     await update_prices_ozon(price_changed_df, "t_price", "old_price", "offer_id", "min_price", 'client_id', 'api_key', debug=DEBUG)
+    ozon_logger = logger.bind(marketplace="Ozon")
+    try:
+        ozon_logger.info("Начало обновления данных Ozon")
+        # Определяем итерируемый объект с дополнительными данными
+        ozon_ranges = [
+            ('ByMarket', 'Ozon!A1:J', Client_Id_ByMarket_OZON,ByMarket_OZON),
+            ('Smart Shop', 'Ozon!M1:V', Client_Id_Smart_Shop_OZON, Smart_Shop_OZON),
+            ('Tech PC Components', 'Ozon!Y1:AH', Client_Id_Tech_PC_Components_OZON, Tech_PC_Components_OZON)
+        ]
+        for range_name, sheet_range, client_id, api_key in ozon_ranges:
+            ozon_logger.info(f"Обработка диапазона {range_name}")
+            df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, sheet_range)
+            ozon_logger.info(f"Получены данные из Google Sheets для диапазона {range_name}")
+            await save_to_database(df, SQLITE_DB_NAME, f'product_data_ozon_{range_name}', primary_key_cols=['product_id'])
+            ozon_logger.info(f"Данные сохранены в базу данных для диапазона {range_name}")
+            updated_df, price_changed_df = await update_price(df, product_id_col='product_id',
+                                                              old_disc_in_base_col='price_old',
+                                                              old_disc_manual_col='old_price')
+            ozon_logger.info(f"Обновление цен выполнено для диапазона {range_name}")
+            await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
+            ozon_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
+            if not price_changed_df.empty:
+                ozon_logger.info(f"Начало обновления цен через API Ozon для диапазона {range_name}", importance="high")
+                await update_prices_ozon(price_changed_df, "new_price", 'price_old',
+                                         "old_price", "product_id", 'offer_id',
+                                         "min_price" ,debug=DEBUG)
+                ozon_logger.info(f"Завершено обновление цен через API Ozon для диапазона {range_name}")
+            ozon_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
+        ozon_logger.info("Обновление данных Ozon успешно завершено")
+    except Exception as e:
+        ozon_logger.error("Критическая ошибка при обновлении данных Ozon", error=str(e))
 
-    df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'Ozon!M1:V')
-    await save_to_database(df, SQLITE_DB_NAME, 'product_data_ozon2', primary_key_cols=['product_id'])
-    updated_df, price_changed_df = await update_price(df, product_id_col='product_id')
-    await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'Ozon!M3:V')
-    # if not price_changed_df.empty:
-        # await update_prices_ozon(price_changed_df, "t_price", "old_price", "offer_id", "min_price", 'client_id', 'api_key', debug=DEBUG)
-
-    df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'Ozon!Y1:AH')
-    await save_to_database(df, SQLITE_DB_NAME, 'product_data_ozon3', primary_key_cols=['product_id'])
-    updated_df, price_changed_df = await update_price(df, product_id_col='product_id')
-    await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'Ozon!Y3:AH')
-    # if not price_changed_df.empty:
-    #     await update_prices_ozon(price_changed_df, "t_price", "old_price", "offer_id", "min_price", 'client_id', 'api_key', debug=DEBUG)
-
-# async def update_data_wb():
-#     df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'WB!A1:H')
-#     await save_to_database(df, SQLITE_DB_NAME, 'product_data_wb1', primary_key_cols=['nmID'])
-#     updated_df, price_changed_df = await update_price(df, product_id_col='nmID')
-#     await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'WB!A3:H')
-#     if not price_changed_df.empty:
-#         await update_prices_wb(price_changed_df, "nmID", "t_price", "discount", 'api_key', debug=DEBUG)
-#
-#     df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'WB!K1:R')
-#     await save_to_database(df, SQLITE_DB_NAME, 'product_data_wb2', primary_key_cols=['nmID'])
-#     updated_df, price_changed_df = await update_price(df, product_id_col='nmID')
-#     await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'WB!K3:R')
-#     if not price_changed_df.empty:
-#         await update_prices_wb(price_changed_df, "nmID", "t_price", "discount", 'api_key', debug=DEBUG)
-#
-#     df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'WB!U1:AB')
-#     await save_to_database(df, SQLITE_DB_NAME, 'product_data_wb3', primary_key_cols=['nmID'])
-#     updated_df, price_changed_df = await update_price(df, product_id_col='nmID')
-#     await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'WB!U3:AB')
-#     if not price_changed_df.empty:
-#         await update_prices_wb(price_changed_df, "nmID", "t_price", "discount", 'api_key', debug=DEBUG)
+async def update_data_wb():
+    wb_logger = logger.bind(marketplace="Wildberries")
+    try:
+        wb_logger.info("Начало обновления данных Wildberries")
+        wb_ranges = [
+            ('Tech PC Components', 'WB!A1:I', Tech_PC_Components_WB),
+            ('ByMarket', 'WB!L1:T',ByMarket_WB ),
+            ('Smart Shop', 'WB!W1:AE', Smart_shop_WB )
+        ]
+        for range_name, sheet_range, api_key in wb_ranges:
+            wb_logger.info(f"Обработка диапазона {range_name}")
+            df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, sheet_range)
+            wb_logger.info(f"Получены данные из Google Sheets для диапазона {range_name}")
+            await save_to_database(df, SQLITE_DB_NAME, f'product_data_wb_{range_name}', primary_key_cols=['nmID'])
+            wb_logger.info(f"Данные сохранены в базу данных для диапазона {range_name}")
+            updated_df, price_changed_df = await update_price(df, product_id_col='nmID',
+                                                              old_disc_in_base_col='disc_old',
+                                                              old_disc_manual_col='discount')
+            wb_logger.info(f"Обновление цен выполнено для диапазона {range_name}")
+            await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
+            wb_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
+            if not price_changed_df.empty:
+                wb_logger.info(f"Начало обновления цен через API Wildberries для диапазона {range_name}", importance="high")
+                await update_prices_wb(price_changed_df, "nmID", "t_price",
+                                       "discount", 'disc_old', api_key, debug=DEBUG)
+                wb_logger.info(f"Завершено обновление цен через API Wildberries для диапазона {range_name}")
+            wb_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
+        wb_logger.info("Обновление данных Wildberries успешно завершено")
+    except Exception as e:
+        wb_logger.error("Критическая ошибка при обновлении данных Wildberries", error=str(e))
 
 async def update_data_ym():
-    df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'YM!A1:I')
-    await save_to_database(df, SQLITE_DB_NAME, 'product_data_ym1', primary_key_cols=['offer_id'])
-    updated_df, price_changed_df = await update_price(df, product_id_col='offer_id')
-    await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'YM!A3:I')
-    # if not price_changed_df.empty:
-    #     await update_price_ym(price_changed_df, 'access_token', 'campaign_id',
-    #                           "offer_id", "t_price", "discount_base", debug=DEBUG)
+    ym_logger = logger.bind(marketplace="YandexMarket")
+    try:
+        ym_logger.info("Начало обновления данных Yandex Market")
+        ym_ranges = [
+            ('Tech PC Components', 'YM!A1:I', Tech_PC_Components_YM, B_id_Tech_PC_Components_YM),
+            ('ByMarket', 'YM!L1:T',  ByMarket_YM, B_id_ByMarket_YM),
+            ('Smart Shop', 'YM!W1:AE',SSmart_shop_YM, B_id_SSmart_shop_YM )
+        ]
+        for range_name, sheet_range, api_key, business_id in ym_ranges:
+            ym_logger.info(f"Обработка диапазона {range_name}")
+            df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, sheet_range)
+            ym_logger.info(f"Получены данные из Google Sheets для диапазона {range_name}")
+            await save_to_database(df, SQLITE_DB_NAME, f'product_data_ym_{range_name}', primary_key_cols=['offer_id'])
+            ym_logger.info(f"Данные сохранены в базу данных для диапазона {range_name}")
+            updated_df, price_changed_df = await update_price(df, product_id_col='offer_id',
+                                                              old_disc_in_base_col='price_old',
+                                                              old_disc_manual_col='discount_base')
+            ym_logger.info(f"Обновление цен выполнено для диапазона {range_name}")
+            await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
+            ym_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
+            if not price_changed_df.empty:
+                ym_logger.info(f"Начало обновления цен через API Yandex Market для диапазона {range_name}", importance="high")
+                await update_price_ym(price_changed_df, api_key, business_id,"offer_id", "price_old",
+                                      "new_price", "discount_base", debug=DEBUG)
+                ym_logger.info(f"Завершено обновление цен через API Yandex Market для диапазона {range_name}")
+            ym_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
+        ym_logger.info("Обновление данных Yandex Market успешно завершено")
+    except Exception as e:
+        ym_logger.error("Критическая ошибка при обновлении данных Yandex Market", error=str(e))
 
-    df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'YM!L1:T')
-    await save_to_database(df, SQLITE_DB_NAME, 'product_data_ym2', primary_key_cols=['offer_id'])
-    updated_df, price_changed_df = await update_price(df, product_id_col='offer_id')
-    await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'YM!L3:T')
-    # if not price_changed_df.empty:
-    #     await update_price_ym(price_changed_df, 'access_token', 'campaign_id',
-    #                           "offer_id", "t_price", "discount_base", debug=DEBUG)
-
-    df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'YM!W1:AE')
-    await save_to_database(df, SQLITE_DB_NAME, 'product_data_ym3', primary_key_cols=['offer_id'])
-    updated_df, price_changed_df = await update_price(df, product_id_col='offer_id')
-    await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'YM!W3:AE')
-    # if not price_changed_df.empty:
-    #     await update_price_ym(price_changed_df, 'access_token', 'campaign_id',
-    #                           "offer_id", "t_price", "discount_base", debug=DEBUG)
-
-# async def update_data_mm():
-#     df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'MM!A1:H')
-#     await save_to_database(df, SQLITE_DB_NAME, 'product_data_mm1', primary_key_cols=['offerId'])
-#     updated_df, price_changed_df = await update_price(df, product_id_col='offerId')
-#     await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'MM!A3:H')
-#     if not price_changed_df.empty:
-#         await update_prices_mm(price_changed_df, 'token', "offerId", "t_price", "isDeleted", debug=DEBUG)
-#
-#     df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'MM!K1:R')
-#     await save_to_database(df, SQLITE_DB_NAME, 'product_data_mm2', primary_key_cols=['offerId'])
-#     updated_df, price_changed_df = await update_price(df, product_id_col='offerId')
-#     await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'MM!K3:R')
-#     if not price_changed_df.empty:
-#         await update_prices_mm(price_changed_df, 'token', "offerId", "t_price", "isDeleted", debug=DEBUG)
-#
-#     df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, 'MM!U1:AB')
-#     await save_to_database(df, SQLITE_DB_NAME, 'product_data_mm3', primary_key_cols=['offerId'])
-#     updated_df, price_changed_df = await update_price(df, product_id_col='offerId')
-#     await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, 'MM!U3:AB')
-#     if not price_changed_df.empty:
-#         await update_prices_mm(price_changed_df, 'token', "offerId", "t_price", "isDeleted", debug=DEBUG)
+async def update_data_mm():
+    mm_logger = logger.bind(marketplace="Megamarket")
+    try:
+        mm_logger.info("Начало обновления данных Megamarket")
+        for range_name, sheet_range in [('MM1', 'MM!A1:H'), ('MM2', 'MM!K1:R'), ('MM3', 'MM!U1:AB')]:
+            mm_logger.info(f"Обработка диапазона {range_name}")
+            df = await get_sheet_data(SAMPLE_SPREADSHEET_ID, sheet_range)
+            mm_logger.info(f"Получены данные из Google Sheets для диапазона {range_name}")
+            await save_to_database(df, SQLITE_DB_NAME, f'product_data_mm_{range_name}', primary_key_cols=['offerId'])
+            mm_logger.info(f"Данные сохранены в базу данных для диапазона {range_name}")
+            updated_df, price_changed_df = await update_price(df, product_id_col='offerId')
+            mm_logger.info(f"Обновление цен выполнено для диапазона {range_name}")
+            await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
+            mm_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
+            if not price_changed_df.empty:
+                mm_logger.info(f"Начало обновления цен через API Megamarket для диапазона {range_name}", importance="high")
+                await update_prices_mm(price_changed_df, 'token', "offerId", "t_price", "isDeleted", debug=DEBUG)
+                mm_logger.info(f"Завершено обновление цен через API Megamarket для диапазона {range_name}")
+            mm_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
+        mm_logger.info("Обновление данных Megamarket успешно завершено")
+    except Exception as e:
+        mm_logger.error("Критическая ошибка при обновлении данных Megamarket", error=str(e))
 
 async def main():
+    logger.info("Запуск основного цикла обновления данных для всех маркетплейсов")
     await update_loop()
 
 if __name__ == "__main__":
     asyncio.run(main())
+

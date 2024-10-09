@@ -66,4 +66,4 @@ df = pd.DataFrame({
 })
 
 token = "E20E64D6-DB3B-48C3-A22D-94963381F3F7"
-asyncio.run(update_prices_mm(df, token, "offer_id", "price", "is_deleted", debug=False))
+# asyncio.run(update_prices_mm(df, token, "offer_id", "price", "is_deleted", debug=False))

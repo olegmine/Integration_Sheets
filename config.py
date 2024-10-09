@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 SAMPLE_SPREADSHEET_ID = '1k_1W6IL1AN9hJ8ZOsrZux1yDxuB0ugew20UdtNzWneM' #id таблицы на гугл драйв
 SQLITE_DB_NAME = 'data.db'
-LOG_FILE_NAME = 'data_updates.log'
+# LOG_FILE_NAME = 'app.log'
 UPDATE_INTERVAL_MINUTES = 5
 
   # Загрузка переменных из .env файла

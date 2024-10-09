@@ -1,81 +1,101 @@
-import pandas as pd  
+import pandas as pd
 from auth import get_credentials
 from googleapiclient.discovery import build
 import sqlite3
-import logging
-from config import LOG_FILE_NAME
-
-logging.basicConfig(
-    filename=LOG_FILE_NAME,
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
+import traceback
+from logger import logger  # Импорт логгера
 
 async def get_sheet_data(spreadsheet_id, range_name):
     """Получает данные из Google Sheets и возвращает их в виде pandas DataFrame"""
     creds = await get_credentials()
     service = build('sheets', 'v4', credentials=creds)
 
-    # Получение данных из Google Sheets
     try:
         result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id,
                                                     range=range_name).execute()
         values = result.get('values', [])
     except Exception as e:
-        logging.error(f"Ошибка при получении данных из Google Sheets: {e}")
+        logger.error("google_sheets_error", error=str(e))
         return None
 
-    # Создание DataFrame из полученных данных
     df = pd.DataFrame(values[1:], columns=values[0])
-
     return df
-
 
 async def save_to_database(df, db_name, product_data_table='product_data_ozon1', primary_key_cols=None):
     """Записывает данные из DataFrame в таблицу базы данных, обновляя и удаляя существующие записи"""
+    conn = None
     try:
+        logger.info("database_update_start", table=product_data_table, dataframe_size=len(df))
+
         conn = sqlite3.connect(db_name)
         c = conn.cursor()
 
-        # Создаем таблицу product_data_table, если она не существует
+        logger.info("creating_table_if_not_exists")
         columns = ", ".join([f'"{col}"' for col in df.columns])
         c.execute(f"CREATE TABLE IF NOT EXISTS '{product_data_table}' ({columns})")
 
-        # Определяем столбцы первичного ключа, если они не указаны
         if primary_key_cols is None:
-            primary_key_cols = [df.columns[0]]  # Используем первый столбец в качестве первичного ключа
+            primary_key_cols = [df.columns[0]]
+        logger.info("primary_keys", keys=primary_key_cols)
 
-        # Получаем существующие записи из таблицы
-        c.execute(f"SELECT {', '.join([f'"{col}"' for col in primary_key_cols])} FROM '{product_data_table}'")
-        existing_keys = [row for row in c.fetchall()]
+        logger.info("fetching_existing_records")
+        c.execute(f"SELECT * FROM '{product_data_table}'")
+        existing_data = {tuple(row[:len(primary_key_cols)]): row for row in c.fetchall()}
+        logger.info("existing_records_count", count=len(existing_data))
 
-        # Записываем данные из DataFrame в таблицу, обновляя и удаляя существующие записи
-        for _, row in df.iterrows():
-            key_values = [str(row[col]) for col in primary_key_cols]
-            key_placeholders = " AND ".join([f'"{col}"=?' for col in primary_key_cols])
-            placeholders = ", ".join(["?"] * len(row))
-            values = [str(v) for v in row.tolist()]
+        updates = inserts = unchanged = deleted = 0
 
-            if tuple(key_values) in existing_keys:
-                update_values = values + key_values
-                c.execute(f"UPDATE '{product_data_table}' SET {', '.join([f'"{col}"=?' for col in df.columns])} WHERE {key_placeholders}", update_values)
-                logging.info(f"Обновлена строка в таблице '{product_data_table}': {', '.join(values)}")
-                existing_keys.remove(tuple(key_values))
+        logger.info("processing_records_start")
+        for index, row in df.iterrows():
+            key_values = tuple(str(row[col]) for col in primary_key_cols)
+            values = tuple(str(v) for v in row.tolist())
+
+            if key_values in existing_data:
+                if values != existing_data[key_values]:
+                    placeholders = ", ".join([f'"{col}"=?' for col in df.columns])
+                    c.execute(
+                        f"UPDATE '{product_data_table}' SET {placeholders} WHERE {' AND '.join([f'"{col}"=?' for col in primary_key_cols])}",
+                        values + key_values)
+                    updates += 1
+                else:
+                    unchanged += 1
+                del existing_data[key_values]
             else:
+                placeholders = ", ".join(["?"] * len(values))
                 c.execute(f"INSERT INTO '{product_data_table}' VALUES ({placeholders})", values)
-                logging.info(f"Добавлена новая строка в таблицу '{product_data_table}': {', '.join(values)}")
+                inserts += 1
 
-        # Удаляем записи, которые отсутствуют в DataFrame
-        for key in existing_keys:
-            key_placeholders = " AND ".join([f'"{col}"=?' for col in primary_key_cols])
-            c.execute(f"DELETE FROM '{product_data_table}' WHERE {key_placeholders}", key)
-            logging.info(f"Удалена строка из таблицы '{product_data_table}': {', '.join(map(str, key))}")
+            if index % 1000 == 0:
+                logger.info("processing_progress", records_processed=index + 1)
+
+        logger.info("deleting_missing_records")
+        for key in existing_data.keys():
+            c.execute(
+                f"DELETE FROM '{product_data_table}' WHERE {' AND '.join([f'"{col}"=?' for col in primary_key_cols])}",
+                key)
+            deleted += 1
 
         conn.commit()
-        logging.info(f"Данные успешно сохранены в таблицу '{product_data_table}'")
-    except sqlite3.Error as e:
-        logging.error(f"Ошибка при работе с базой данных: {e}")
+        logger.info("database_changes_committed")
+
+        total_records = max(len(df) + deleted, 1)
+        change_percentage = (updates + inserts + deleted) / total_records * 100
+
+        logger.info("update_complete",
+                    inserted=inserts,
+                    updated=updates,
+                    unchanged=unchanged,
+                    deleted=deleted,
+                    total_records=total_records,
+                    change_percentage=f"{change_percentage:.2f}%")
+
+    except Exception as e:
+        logger.error("database_update_error",
+                     error=str(e),
+                     traceback=traceback.format_exc())
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+            logger.info("database_connection_closed")
+
+
