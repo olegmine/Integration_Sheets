@@ -27,18 +27,18 @@ async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, base_old_pric
             product_id = int(row[product_id_col])  # Получаем ID продукта
             offer_id = str(row[offer_id_col])  # Получаем ID предложения
 
-            new_price = row[new_price_col]  # Получаем новую цену
+            new_price = int(round(float(row[new_price_col])))  # Получаем новую цену
             min_price = row.get(min_price_col, '0')  # Получаем минимальную цену, по умолчанию '0'
 
             # Пытаемся преобразовать base_old_price в целое число
             try:
-                old_price = int(row[old_price_col])  # Получаем старую цену
+                old_price = int(round(float(row[old_price_col])))  # Получаем старую цену
             except ValueError:
                 logger.warning(
                     f"Недопустимое значение базы скидки для offer_id: {offer_id}, discount_base: {row[old_price_col]}")
                 try:
 
-                    old_price = int(row[base_old_price_col])
+                    old_price = int(round(float(row[base_old_price_col])))
                 except :
                     old_price = 0  # Значение по умолчанию, если преобразование не удалось
                     logger.warning(f"Установлено значение по умолчанию для старой цены : {0}")
@@ -49,10 +49,10 @@ async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, base_old_pric
                     {
                         "auto_action_enabled": "UNKNOWN",
                         "currency_code": "RUB",
-                        "min_price": min_price,
-                        "offer_id": offer_id,
-                        "old_price": old_price,
-                        "price": new_price,
+                        "min_price": "0",
+                        "offer_id": str(offer_id),
+                        "old_price": str(old_price),
+                        "price": str(new_price),
                         "price_strategy_enabled": "UNKNOWN",
                         "product_id": product_id
                     }

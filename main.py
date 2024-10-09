@@ -19,7 +19,7 @@ from config import (Tech_PC_Components_OZON, Client_Id_Tech_PC_Components_OZON, 
                     B_id_Tech_PC_Components_YM, SSmart_shop_YM, B_id_SSmart_shop_YM, ByMarket_YM, B_id_ByMarket_YM,
                     Tech_PC_Components_WB, ByMarket_WB, Smart_shop_WB)
 
-DEBUG = True
+DEBUG = False
 
 # Установите максимальное количество строк и столбцов для отображения
 pd.set_option('display.max_rows', None)
@@ -76,12 +76,13 @@ async def update_data_ozon():
             ozon_logger.info(f"Обновление цен выполнено для диапазона {range_name}")
             await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
             ozon_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
+            print(price_changed_df.head())
             if not price_changed_df.empty:
-                ozon_logger.info(f"Начало обновления цен через API Ozon для диапазона {range_name}", importance="high")
-                await update_prices_ozon(price_changed_df, "new_price", 'price_old',
+                ozon_logger.warning(f"Начало обновления цен через API Ozon для диапазона {range_name}", importance="high")
+                await update_prices_ozon(price_changed_df,"t_price", 'price_old',
                                          "old_price", "product_id", 'offer_id',
-                                         "min_price" ,debug=DEBUG)
-                ozon_logger.info(f"Завершено обновление цен через API Ozon для диапазона {range_name}")
+                                         "min_price" , client_id,api_key,debug=DEBUG)
+                ozon_logger.warning(f"Завершено обновление цен через API Ozon для диапазона {range_name}")
             ozon_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
         ozon_logger.info("Обновление данных Ozon успешно завершено")
     except Exception as e:
@@ -109,10 +110,10 @@ async def update_data_wb():
             await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
             wb_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
             if not price_changed_df.empty:
-                wb_logger.info(f"Начало обновления цен через API Wildberries для диапазона {range_name}", importance="high")
+                wb_logger.warning(f"Начало обновления цен через API Wildberries для диапазона {range_name}", importance="high")
                 await update_prices_wb(price_changed_df, "nmID", "t_price",
                                        "discount", 'disc_old', api_key, debug=DEBUG)
-                wb_logger.info(f"Завершено обновление цен через API Wildberries для диапазона {range_name}")
+                wb_logger.warning(f"Завершено обновление цен через API Wildberries для диапазона {range_name}")
             wb_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
         wb_logger.info("Обновление данных Wildberries успешно завершено")
     except Exception as e:
@@ -140,10 +141,10 @@ async def update_data_ym():
             await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
             ym_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
             if not price_changed_df.empty:
-                ym_logger.info(f"Начало обновления цен через API Yandex Market для диапазона {range_name}", importance="high")
+                ym_logger.warning(f"Начало обновления цен через API Yandex Market для диапазона {range_name}", importance="high")
                 await update_price_ym(price_changed_df, api_key, business_id,"offer_id", "price_old",
-                                      "new_price", "discount_base", debug=DEBUG)
-                ym_logger.info(f"Завершено обновление цен через API Yandex Market для диапазона {range_name}")
+                                      "t_price", "discount_base", debug=DEBUG)
+                ym_logger.warning(f"Завершено обновление цен через API Yandex Market для диапазона {range_name}")
             ym_logger.info(f"Обработка диапазона {range_name} завершена", rows_updated=len(price_changed_df))
         ym_logger.info("Обновление данных Yandex Market успешно завершено")
     except Exception as e:
