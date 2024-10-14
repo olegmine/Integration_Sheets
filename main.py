@@ -19,7 +19,7 @@ from config import (Tech_PC_Components_OZON, Client_Id_Tech_PC_Components_OZON, 
                     B_id_Tech_PC_Components_YM, SSmart_shop_YM, B_id_SSmart_shop_YM, ByMarket_YM, B_id_ByMarket_YM,
                     Tech_PC_Components_WB, ByMarket_WB, Smart_shop_WB)
 
-DEBUG = False
+DEBUG = True
 
 # Установите максимальное количество строк и столбцов для отображения
 pd.set_option('display.max_rows', None)
@@ -44,25 +44,25 @@ async def update_loop():
             logger.info("Начало цикла обновления данных для всех маркетплейсов")
             await asyncio.gather(
                 update_data_ozon(),
-                update_data_wb(),
-                update_data_ym(),
+                # update_data_wb(),
+                # update_data_ym(),
                 # update_data_mm() # Раскомментируйте для обновления данных Megamarket
             )
             logger.info("Цикл обновления данных для всех маркетплейсов успешно завершен")
         except Exception as e:
-            logger.error("Критическая ошибка в цикле обновления данных", error=str(e))
-        logger.info(f"Ожидание {UPDATE_INTERVAL_MINUTES} минут до следующего обновления")
+            logger.warning("Критическая ошибка в цикле обновления данных", error=str(e))
+        logger.warning(f"Ожидание {UPDATE_INTERVAL_MINUTES} минут до следующего обновления")
         await asyncio.sleep(UPDATE_INTERVAL_MINUTES * 60)
 
 async def update_data_ozon():
     ozon_logger = logger.bind(marketplace="Ozon")
     try:
-        ozon_logger.info("Начало обновления данных Ozon")
+        ozon_logger.warning("Начало обновления данных Ozon")
         # Определяем итерируемый объект с дополнительными данными
         ozon_ranges = [
-            ('ByMarket', 'Ozon!A1:J', Client_Id_ByMarket_OZON,ByMarket_OZON),
-            ('Smart Shop', 'Ozon!M1:V', Client_Id_Smart_Shop_OZON, Smart_Shop_OZON),
-            ('Tech PC Components', 'Ozon!Y1:AH', Client_Id_Tech_PC_Components_OZON, Tech_PC_Components_OZON)
+            ('ByMarket', 'Ozon!A1:K', Client_Id_ByMarket_OZON,ByMarket_OZON),
+            ('Smart Shop', 'Ozon!N1:X', Client_Id_Smart_Shop_OZON, Smart_Shop_OZON),
+            ('Tech PC Components', 'Ozon!AA1:AK', Client_Id_Tech_PC_Components_OZON, Tech_PC_Components_OZON)
         ]
         for range_name, sheet_range, client_id, api_key in ozon_ranges:
             ozon_logger.info(f"Обработка диапазона {range_name}")
@@ -76,6 +76,8 @@ async def update_data_ozon():
             ozon_logger.info(f"Обновление цен выполнено для диапазона {range_name}")
             await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
             ozon_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
+            await save_to_database(updated_df, SQLITE_DB_NAME, f'product_data_ozon_{range_name}',
+                                   primary_key_cols=['product_id'])
             print(price_changed_df.head())
             if not price_changed_df.empty:
                 ozon_logger.warning(f"Начало обновления цен через API Ozon для диапазона {range_name}", importance="high")
@@ -91,7 +93,7 @@ async def update_data_ozon():
 async def update_data_wb():
     wb_logger = logger.bind(marketplace="Wildberries")
     try:
-        wb_logger.info("Начало обновления данных Wildberries")
+        wb_logger.warning("Начало обновления данных Wildberries")
         wb_ranges = [
             ('Tech PC Components', 'WB!A1:I', Tech_PC_Components_WB),
             ('ByMarket', 'WB!L1:T',ByMarket_WB ),
@@ -122,7 +124,7 @@ async def update_data_wb():
 async def update_data_ym():
     ym_logger = logger.bind(marketplace="YandexMarket")
     try:
-        ym_logger.info("Начало обновления данных Yandex Market")
+        ym_logger.warning("Начало обновления данных Yandex Market")
         ym_ranges = [
             ('Tech PC Components', 'YM!A1:I', Tech_PC_Components_YM, B_id_Tech_PC_Components_YM),
             ('ByMarket', 'YM!L1:T',  ByMarket_YM, B_id_ByMarket_YM),

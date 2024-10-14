@@ -28,7 +28,11 @@ async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, base_old_pric
             offer_id = str(row[offer_id_col])  # Получаем ID предложения
 
             new_price = int(round(float(row[new_price_col])))  # Получаем новую цену
-            min_price = row.get(min_price_col, '0')  # Получаем минимальную цену, по умолчанию '0'
+            try:
+                min_price = int(round(float(row[min_price_col])))
+
+            except ValueError:
+                min_price = 0
 
             # Пытаемся преобразовать base_old_price в целое число
             try:
@@ -49,7 +53,7 @@ async def update_prices_ozon(df: pd.DataFrame, new_price_col: str, base_old_pric
                     {
                         "auto_action_enabled": "UNKNOWN",
                         "currency_code": "RUB",
-                        "min_price": "0",
+                        "min_price": str(min_price),
                         "offer_id": str(offer_id),
                         "old_price": str(old_price),
                         "price": str(new_price),

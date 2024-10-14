@@ -1,10 +1,11 @@
+
 import structlog
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import json
 import os
 from datetime import datetime, timedelta
-
+import time
 
 class NonEscapingJsonEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -15,10 +16,8 @@ class NonEscapingJsonEncoder(json.JSONEncoder):
     def encode(self, obj):
         return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
 
-
 def json_serializer(event_dict, *args, **kwargs):
     return json.dumps(event_dict, ensure_ascii=False, cls=NonEscapingJsonEncoder)
-
 
 class ColorCodes:
     RESET = "\033[0m"
@@ -31,38 +30,34 @@ class ColorCodes:
     WHITE = "\033[37m"
     BOLD = "\033[1m"
 
-
 def add_color_and_importance(logger, method_name, event_dict):
     level = event_dict.get('level', '')
     importance = event_dict.pop('importance', 'normal')
 
-    if 'message' not in event_dict:
-        event_dict['message'] = "Сообщение не предоставлено"
+    if 'message' in event_dict:
+        if importance == 'high':
+            event_dict['message'] = f"[ВАЖНО] {event_dict['message']}"
 
-    if importance == 'high':
-        event_dict['message'] = f"[ВАЖНО] {event_dict['message']}"
+        if method_name == 'info':
+            color = ColorCodes.GREEN
+        elif method_name in ['warning', 'warn']:
+            color = ColorCodes.YELLOW
+        elif method_name in ['error', 'exception', 'critical']:
+            color = ColorCodes.RED
+        else:
+            color = ColorCodes.WHITE
 
-    if method_name == 'info':
-        color = ColorCodes.GREEN
-    elif method_name in ['warning', 'warn']:
-        color = ColorCodes.YELLOW
-    elif method_name in ['error', 'exception', 'critical']:
-        color = ColorCodes.RED
-    else:
-        color = ColorCodes.WHITE
+        if importance == 'high':
+            color += ColorCodes.BOLD
 
-    if importance == 'high':
-        color += ColorCodes.BOLD
+        event_dict['colored_message'] = f"{color}{event_dict['message']}{ColorCodes.RESET}"
 
-    event_dict['colored_message'] = f"{color}{event_dict['message']}{ColorCodes.RESET}"
     return event_dict
-
 
 def filter_important_logs(logger, method_name, event_dict):
     if event_dict and '[ВАЖНО]' in event_dict.get('message', ''):
         return event_dict
-    return event_dict  # Оставляем лог пустым, но возвращаем в консоль
-
+    return event_dict
 
 def reorder_event_dict(logger, method_name, event_dict):
     if 'marketplace' in event_dict:
@@ -70,10 +65,8 @@ def reorder_event_dict(logger, method_name, event_dict):
         event_dict = {'marketplace': marketplace_value, **event_dict}
     return event_dict
 
-
 def remove_empty_values(logger, method_name, event_dict):
     return {k: v for k, v in event_dict.items() if v is not None and v != ''}
-
 
 def cleanup_old_logs(log_directory, days_to_keep=10):
     current_date = datetime.now()
@@ -88,6 +81,13 @@ def cleanup_old_logs(log_directory, days_to_keep=10):
                 os.remove(file_path)
                 print(f"Удален старый лог-файл: {filename}")
 
+class ErrorWarningFilter(logging.Filter):
+    def filter(self, record):
+        return record.levelno in (logging.ERROR, logging.WARNING)
+
+def add_timestamp(logger, method_name, event_dict):
+    event_dict['timestamp'] = time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime())
+    return event_dict
 
 def configure_logging(log_directory='logs', log_level=logging.INFO):
     os.makedirs(log_directory, exist_ok=True)
@@ -96,7 +96,6 @@ def configure_logging(log_directory='logs', log_level=logging.INFO):
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 
-    # Настройка обработчика для файлов логов
     file_handler = TimedRotatingFileHandler(
         log_file_path,
         when="midnight",
@@ -106,24 +105,23 @@ def configure_logging(log_directory='logs', log_level=logging.INFO):
     )
     file_handler.setLevel(log_level)
 
-    # Настройка обработчика для вывода в консоль
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(log_level)
+    console_handler.setLevel(logging.WARNING)
+    console_handler.addFilter(ErrorWarningFilter())
 
-    # Конфигурация structlog
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
             structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
+            add_timestamp,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            reorder_event_dict,  # Перемещение 'marketplace' в начало
+            reorder_event_dict,
             add_color_and_importance,
-            remove_empty_values,  # Удаляем пустые значения для консоли
+            remove_empty_values,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         context_class=dict,
@@ -132,12 +130,10 @@ def configure_logging(log_directory='logs', log_level=logging.INFO):
         cache_logger_on_first_use=True,
     )
 
-    # Форматирование для файлов
     file_processor = structlog.processors.JSONRenderer(serializer=json_serializer)
     file_formatter = structlog.stdlib.ProcessorFormatter(processor=file_processor)
     file_handler.setFormatter(file_formatter)
 
-    # Форматирование для консоли
     console_processor = structlog.dev.ConsoleRenderer(colors=True)
     console_formatter = structlog.stdlib.ProcessorFormatter(processor=console_processor)
     console_handler.setFormatter(console_formatter)
@@ -145,12 +141,24 @@ def configure_logging(log_directory='logs', log_level=logging.INFO):
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
-    # Очистка старых логов
     cleanup_old_logs(log_directory)
 
     return structlog.get_logger()
 
-
 # Создание глобального логгера
 logger = configure_logging()
+
+# Пример использования
+if __name__ == "__main__":
+    logger.info("Это информационное сообщение")
+    logger.warning("Это предупреждение")
+    logger.error("Это сообщение об ошибке")
+    logger.info("Важное информационное сообщение", importance="high")
+    logger.warning("Важное предупреждение", importance="high")
+    logger.error("Важное сообщение об ошибке", importance="high")
+    logger.info(marketplace="TestMarket", user_id=12345)
+    logger.warning(marketplace="TestMarket", error_code="E001")
+    logger.error(marketplace="TestMarket", error_message="Critical failure")
+
+
 
