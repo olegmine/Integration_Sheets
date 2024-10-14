@@ -21,10 +21,6 @@ from config import (Tech_PC_Components_OZON, Client_Id_Tech_PC_Components_OZON, 
 
 DEBUG = True
 
-# Установите максимальное количество строк и столбцов для отображения
-pd.set_option('display.max_rows', None)
-pd.set_option('display.max_columns', None)
-
 
 async def delete_table(db_name, table_name):
     try:
