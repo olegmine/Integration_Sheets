@@ -44,8 +44,8 @@ async def update_loop():
             logger.info("Начало цикла обновления данных для всех маркетплейсов")
             await asyncio.gather(
                 update_data_ozon(),
-                # update_data_wb(),
-                # update_data_ym(),
+                update_data_wb(),
+                update_data_ym(),
                 # update_data_mm() # Раскомментируйте для обновления данных Megamarket
             )
             logger.info("Цикл обновления данных для всех маркетплейсов успешно завершен")
@@ -60,9 +60,9 @@ async def update_data_ozon():
         ozon_logger.warning("Начало обновления данных Ozon")
         # Определяем итерируемый объект с дополнительными данными
         ozon_ranges = [
-            ('ByMarket', 'Ozon!A1:K', Client_Id_ByMarket_OZON,ByMarket_OZON),
-            ('Smart Shop', 'Ozon!N1:X', Client_Id_Smart_Shop_OZON, Smart_Shop_OZON),
-            ('Tech PC Components', 'Ozon!AA1:AK', Client_Id_Tech_PC_Components_OZON, Tech_PC_Components_OZON)
+            ('ByMarket', 'OzonByMarket!A1:K', Client_Id_ByMarket_OZON,ByMarket_OZON),
+            ('Smart Shop', 'OzonSmartShop!A1:K', Client_Id_Smart_Shop_OZON, Smart_Shop_OZON),
+            ('Tech PC Components', 'OzonTechPCComponents!A1:K', Client_Id_Tech_PC_Components_OZON, Tech_PC_Components_OZON)
         ]
         for range_name, sheet_range, client_id, api_key in ozon_ranges:
             ozon_logger.info(f"Обработка диапазона {range_name}")
@@ -78,8 +78,9 @@ async def update_data_ozon():
             ozon_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
             await save_to_database(updated_df, SQLITE_DB_NAME, f'product_data_ozon_{range_name}',
                                    primary_key_cols=['product_id'])
-            print(price_changed_df.head())
+
             if not price_changed_df.empty:
+                print(price_changed_df.head())
                 ozon_logger.warning(f"Начало обновления цен через API Ozon для диапазона {range_name}", importance="high")
                 await update_prices_ozon(price_changed_df,"t_price", 'price_old',
                                          "old_price", "product_id", 'offer_id',
@@ -95,9 +96,9 @@ async def update_data_wb():
     try:
         wb_logger.warning("Начало обновления данных Wildberries")
         wb_ranges = [
-            ('Tech PC Components', 'WB!A1:I', Tech_PC_Components_WB),
-            ('ByMarket', 'WB!L1:T',ByMarket_WB ),
-            ('Smart Shop', 'WB!W1:AE', Smart_shop_WB )
+            ('Tech PC Components', 'WB_TechPCComponents!A1:I', Tech_PC_Components_WB),
+            ('ByMarket', 'WB_ByMarket!A1:I',ByMarket_WB ),
+            ('Smart Shop', 'WB_SmartShop!A1:I', Smart_shop_WB )
         ]
         for range_name, sheet_range, api_key in wb_ranges:
             wb_logger.info(f"Обработка диапазона {range_name}")
@@ -112,6 +113,7 @@ async def update_data_wb():
             await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
             wb_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
             if not price_changed_df.empty:
+                print(price_changed_df.head())
                 wb_logger.warning(f"Начало обновления цен через API Wildberries для диапазона {range_name}", importance="high")
                 await update_prices_wb(price_changed_df, "nmID", "t_price",
                                        "discount", 'disc_old', api_key, debug=DEBUG)
@@ -126,9 +128,9 @@ async def update_data_ym():
     try:
         ym_logger.warning("Начало обновления данных Yandex Market")
         ym_ranges = [
-            ('Tech PC Components', 'YM!A1:I', Tech_PC_Components_YM, B_id_Tech_PC_Components_YM),
-            ('ByMarket', 'YM!L1:T',  ByMarket_YM, B_id_ByMarket_YM),
-            ('Smart Shop', 'YM!W1:AE',SSmart_shop_YM, B_id_SSmart_shop_YM )
+            ('Tech PC Components', 'YM_TechPCComponents!A1:I', Tech_PC_Components_YM, B_id_Tech_PC_Components_YM),
+            ('ByMarket', 'YM_ByMarket!A1:I',  ByMarket_YM, B_id_ByMarket_YM),
+            ('Smart Shop', 'YM_SmartShop!A1:I',SSmart_shop_YM, B_id_SSmart_shop_YM )
         ]
         for range_name, sheet_range, api_key, business_id in ym_ranges:
             ym_logger.info(f"Обработка диапазона {range_name}")
@@ -143,6 +145,7 @@ async def update_data_ym():
             await write_sheet_data(updated_df, SAMPLE_SPREADSHEET_ID, sheet_range.replace('1', '3'))
             ym_logger.info(f"Обновленные данные записаны в Google Sheets для диапазона {range_name}")
             if not price_changed_df.empty:
+                print(price_changed_df.head())
                 ym_logger.warning(f"Начало обновления цен через API Yandex Market для диапазона {range_name}", importance="high")
                 await update_price_ym(price_changed_df, api_key, business_id,"offer_id", "price_old",
                                       "t_price", "discount_base", debug=DEBUG)
