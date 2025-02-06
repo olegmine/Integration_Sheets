@@ -104,7 +104,7 @@ df = pd.DataFrame({
 })
 
 client_id = "1336645"
-api_key = "e6640a3f-d177-4b08-9487-59be840f8a8c"
+api_key = "sample"
 
 # Для отправки реальных запросов
 # asyncio.run(update_prices_ozon(df, "new_price", "old_price", "product_id", 'offer_id', "min_price", client_id, api_key))
